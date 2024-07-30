@@ -2,7 +2,7 @@
 #include "cudad3d11.h"
 
 CudaH264::CudaH264(int _argc, char *_argv[])
-try : argc(_argc), argv(_argv), fpOut("out.bgra", std::ios::out | std::ios::binary), iGpu(0)
+try : argc(_argc), argv(_argv), fpOut("out.h264", std::ios::out | std::ios::binary), iGpu(0)
 {
 
     int iGpu = 0;
@@ -91,7 +91,7 @@ HRESULT CudaH264::InitEnc()
         err << "Unable to create CUDA context" << std::endl;
         throw std::invalid_argument(err.str());
     }
-    NV_ENC_BUFFER_FORMAT eFormat = NV_ENC_BUFFER_FORMAT_ABGR;
+    NV_ENC_BUFFER_FORMAT eFormat = NV_ENC_BUFFER_FORMAT_ARGB;
     int iGpu = 0;
     try
     {
@@ -109,6 +109,9 @@ HRESULT CudaH264::InitEnc()
     initializeParams.encodeConfig = &encodeConfig;
     initializeParams.encodeWidth = w;
     initializeParams.encodeHeight = h;
+    initializeParams.frameRateDen = 1;
+    initializeParams.frameRateNum = 100;
+    initializeParams.enablePTD = 1;
     pEnc->CreateDefaultEncoderParams(&initializeParams, NV_ENC_CODEC_H264_GUID, NV_ENC_PRESET_LOW_LATENCY_HP_GUID);
 
     pEnc->CreateEncoder(&initializeParams);
@@ -203,16 +206,7 @@ HRESULT CudaH264::Capture(int wait)
     // Define the desired texture description
     D3D11_TEXTURE2D_DESC desc;
     ZeroMemory(&desc, sizeof(desc));
-    desc.Width = 1920;
-    desc.Height = 1080;
-    desc.MipLevels = 1;
-    desc.ArraySize = 1;
-    desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-    desc.SampleDesc.Count = 1;
-    desc.SampleDesc.Quality = 0;
-    desc.Usage = D3D11_USAGE_DEFAULT;
-    desc.BindFlags = 40;
-    desc.CPUAccessFlags = 0;
+    pDupTex2D->GetDesc(&desc);
     desc.MiscFlags = D3D11_RESOURCE_MISC_SHARED;
 
     // Create the intermediate texture

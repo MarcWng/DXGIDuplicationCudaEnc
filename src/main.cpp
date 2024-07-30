@@ -35,7 +35,7 @@
 int Grab60FPS(int nFrames, int argc,char *argv[])
 {
     std::unique_ptr<CudaH264> Cudah264 = std::make_unique<CudaH264>(argc, argv);
-    const int WAIT_BASE = 17;
+    const int WAIT_BASE = 10;
     HRESULT hr = S_OK;
     int capturedFrames = 0;
     LARGE_INTEGER start = { 0 };
@@ -121,7 +121,7 @@ int Grab60FPS(int nFrames, int argc,char *argv[])
 int main(int argc, char *argv[])
 {
     /// The app will try to capture 20 times, by default
-    int nFrames = 60;
+    int nFrames = 300;
     int ret = 0;
     bool useNvenc = true;
 

@@ -60,7 +60,7 @@ HRESULT DDAImpl::Init()
         CLEAN_RETURN(hr);
     }
     /// Once we have the DXGI Adapter, we enumerate the attached display outputs, and select which one we want to capture
-    /// This sample application always captures the primary display output, enumerated at index 0.
+
     if (FAILED(hr = pAdapter->EnumOutputs(0, &pOutput)))
     {
         CLEAN_RETURN(hr);
