@@ -9,19 +9,9 @@
 CudaH264::CudaH264(int _argc, char *_argv[])
 try : argc(_argc), argv(_argv), fpOut("out.h264", std::ios::out | std::ios::binary), iGpu(0)
 {
-
-    int iGpu = 0;
-    int nGpu = 0;
-    cuDeviceGetCount(&nGpu);
-    std::cout << nGpu << std::endl;
     cuInit(0);
-    cuDeviceGet(&cuDevice, iGpu);
     char szDeviceName[80];
     cuDeviceGetName(szDeviceName, sizeof(szDeviceName), cuDevice);
-    if (iGpu < 0 || iGpu >= nGpu)
-    {
-        std::cout << "GPU ordinal out of range. Should be within [" << 0 << ", " << nGpu - 1 << "]" << std::endl;
-    }
 }
 catch (...)
 {
@@ -145,8 +135,8 @@ HRESULT CudaH264::InitOutFile()
 HRESULT CudaH264::InitEnc()
 {
     HRESULT hr = S_OK;
-    DWORD w = pDDAWrapper->getWidth();
-    DWORD h = pDDAWrapper->getHeight();
+    DWORD w = pDDAWrapper->getWidth(1);
+    DWORD h = pDDAWrapper->getHeight(1);
 
     char szDeviceName[80];
     cuDeviceGet(&cuDevice, iGpu);
@@ -173,11 +163,12 @@ HRESULT CudaH264::InitEnc()
 
     NV_ENC_INITIALIZE_PARAMS initializeParams = {NV_ENC_INITIALIZE_PARAMS_VER};
     NV_ENC_CONFIG encodeConfig = {NV_ENC_CONFIG_VER};
-    ZeroMemory(&initializeParams, sizeof(initializeParams));
-    ZeroMemory(&encodeConfig, sizeof(encodeConfig));
     initializeParams.encodeConfig = &encodeConfig;
     initializeParams.encodeWidth = w;
     initializeParams.encodeHeight = h;
+    initializeParams.frameRateNum = 60;
+    initializeParams.frameRateDen = 1;
+
     pEnc->CreateDefaultEncoderParams(&initializeParams, NV_ENC_CODEC_H264_GUID, NV_ENC_PRESET_LOW_LATENCY_HP_GUID);
 
     pEnc->CreateEncoder(&initializeParams);
@@ -222,7 +213,6 @@ void CudaH264::Cleanup(bool bDelete)
 {
     if (pDDAWrapper)
     {
-        pDDAWrapper->Cleanup();
         delete pDDAWrapper;
         pDDAWrapper = nullptr;
     }
@@ -245,7 +235,7 @@ void CudaH264::Cleanup(bool bDelete)
 
 HRESULT CudaH264::Capture(int wait)
 {
-    HRESULT hr = pDDAWrapper->GetCapturedFrame(&pDupTex2D, wait);
+    HRESULT hr = pDDAWrapper->GetCapturedFrame(&pDupTex2D, wait, 1);
     pEncBuf = nullptr;
     if (FAILED(hr))
         failCount++;
