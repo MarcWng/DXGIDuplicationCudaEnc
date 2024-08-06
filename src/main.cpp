@@ -26,67 +26,13 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "Defs.hpp"
-#include "Preproc.hpp"
-#include "CudaH264.hpp"
-#include <memory>
-
-
-int runLoop(int nFrames, int argc, char *argv[])
+// #include "Defs.hpp"
+// #include "Preproc.hpp"
+#include "Core.hpp"
+#include <thread>
+int Core::runLoop(int nFrames, unsigned short displayIndex)
 {
-    std::unique_ptr<CudaH264> Cudah264 = std::make_unique<CudaH264>(argc, argv);
-    const int WAIT_BASE = 17; // 17 ms per frames = 60 FPS
-    HRESULT hr = S_OK;
-    int capturedFrames = 0;
-    // for the capture time
-    LARGE_INTEGER start = {0};
-    LARGE_INTEGER end = {0};
-    LARGE_INTEGER interval = {0};
-    LARGE_INTEGER freq = {0};
-    int wait = WAIT_BASE;
-
-    // for the preproc time
-    // to delete later :
-    LARGE_INTEGER START = {0};
-    LARGE_INTEGER END = {0};
-    LARGE_INTEGER INTERVAL = {0};
-    int wait2 = WAIT_BASE;
-    //
-
-    QueryPerformanceFrequency(&freq);
-
-    /// Reset waiting time for the next screen capture attempt
-#define RESET_WAIT_TIME(start, end, interval, freq)                                 \
-    QueryPerformanceCounter(&end);                                                  \
-    interval.QuadPart = end.QuadPart - start.QuadPart;                              \
-    MICROSEC_TIME(interval, freq);                                                  \
-    wait = (int)((WAIT_BASE) - (interval.QuadPart / 1000));                         \
-    if (wait < 0) wait = 0;                                                                 \
-    // std::cout << "Interval: " << interval.QuadPart << " microseconds" << std::endl; \
-    // std::cout << "Start Time: " << start.QuadPart << " ticks" << std::endl;         \
-    // std::cout << "End Time: " << end.QuadPart << " ticks" << std::endl;             \
-    // std::cout << "Wait Time: " << wait << " millisecconds" << std::endl;            \
-    // std::cout << "Wait Time in Microseconds: " << (int)((WAIT_BASE * 1000) - (interval.QuadPart)) << " microseconds" << std::endl;
-
-#define RESET_WAIT_TIME2(START, END, INTERVAL, freq)                                \
-    QueryPerformanceCounter(&END);                                                  \
-    INTERVAL.QuadPart = END.QuadPart - START.QuadPart;                              \
-    MICROSEC_TIME(INTERVAL, freq);                                                  \
-    wait2 = (int)((WAIT_BASE) - (INTERVAL.QuadPart / 1000));                        \
-    // std::cout << "Interval: " << INTERVAL.QuadPart << " microseconds" << std::endl; \
-    // std::cout << "Start Time: " << START.QuadPart << " ticks" << std::endl;         \
-    // std::cout << "End Time: " << END.QuadPart << " ticks" << std::endl;             \
-    // std::cout << "Wait Time: " << wait2 << " millisecconds" << std::endl;           \
-    // std::cout << "Wait Time in Microseconds: " << (int)((WAIT_BASE * 1000) - (INTERVAL.QuadPart)) << " microseconds" << std::endl;
-
-    /// Initialize Cudah264 app
-    hr = Cudah264->Init();
-    if (FAILED(hr))
-    {
-        printf("Initialization failed with error 0x%08x\n", hr);
-        return -1;
-    }
-
+    std::unique_ptr<CudaH264> &Cudah264 = encoders[displayIndex];
     /// Run capture loop
     do
     {
@@ -95,14 +41,14 @@ int runLoop(int nFrames, int argc, char *argv[])
         QueryPerformanceCounter(&start);
         /// Get a frame from DDA
         hr = Cudah264->Capture(wait);
-        RESET_WAIT_TIME(start, end, interval, freq);
+        resetWaitTime(start, end, interval, freq);
         std::cout << " ---- capture took " << interval.QuadPart / 1000 << " milliseconds" << std::endl;
 
         if (hr == DXGI_ERROR_WAIT_TIMEOUT)
         {
             /// retry if there was no new update to the screen during our specific timeout interval
             /// reset our waiting time
-            RESET_WAIT_TIME(start, end, interval, freq);
+            resetWaitTime(start, end, interval, freq);
             continue;
         }
         else
@@ -112,21 +58,21 @@ int runLoop(int nFrames, int argc, char *argv[])
                 /// Re-try with a new DDA object
                 printf("Capture failed with error 0x%08x. Re-create DDA and try again.\n", hr);
                 Cudah264->Cleanup(true);
-                hr = Cudah264->Init();
+                hr = Cudah264->Init(pDevice, pFactory, pAdapter);
                 if (FAILED(hr))
                 {
                     /// Could not initialize DDA, bail out/
                     printf("Failed to Init Cudah264-> return error 0x%08x\n", hr);
                     return -1;
                 }
-                RESET_WAIT_TIME(start, end, interval, freq);
+                resetWaitTime(start, end, interval, freq);
                 QueryPerformanceCounter(&start);
                 /// Get a frame from DDA
                 Cudah264->Capture(wait); // - 1 ms
             }
-            QueryPerformanceCounter(&START);
+            // QueryPerformanceCounter(&START);
             hr = Cudah264->Preproc(); // Encode 1 frame full HD = 2-3 ms // result 1-3 ms
-            RESET_WAIT_TIME2(START, END, INTERVAL, freq);
+            // resetWaitTime2(START, END, INTERVAL, freq);
             std::cout << " ______ Preproc took " << INTERVAL.QuadPart / 1000 << " milliseconds" << std::endl;
             std::cout << "///////////////////////////////////// " << std::endl;
             if (FAILED(hr))
@@ -144,10 +90,9 @@ int runLoop(int nFrames, int argc, char *argv[])
 
 int main(int argc, char *argv[])
 {
-    int nFrames = 61;
+    int nFrames = 200;
     int ret = 0;
-    bool useNvenc = true;
-
-    ret = runLoop(nFrames, argc, argv);
+    Core core(nFrames, argc, argv);
+    core.runThreads();
     return ret;
 }

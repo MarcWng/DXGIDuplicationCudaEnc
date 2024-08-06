@@ -52,7 +52,7 @@ private:
     /// The D3D11 Device Context used by the DDA session
     ComPtr<ID3D11DeviceContext> pCtx;
     /// Vector to hold duplication objects and information for each display
-    std::vector<DisplayDuplication> displays;
+    DisplayDuplication display;
     /// Running count of no. of accumulated desktop updates
     int frameno = 0;
     /// output file stream to dump timestamps
@@ -68,12 +68,10 @@ public:
     /// Destructor. Release all resources before destroying the object
     ~DDAImpl();
     /// Initialize DDA
-    HRESULT Init();
+    HRESULT Init(int display, ComPtr<IDXGIDevice2> &pDevice, ComPtr<IDXGIFactory3> &pFactory, ComPtr<IDXGIAdapter> &pAdapter);
     /// Acquire a new frame from DDA, and return it as a Texture2D object.
     /// 'wait' specifies the time in milliseconds that DDA should wait for a new screen update.
-    HRESULT GetCapturedFrame(ID3D11Texture2D **pTex2D, int wait, int displayIndex);
+    HRESULT GetCapturedFrame(ID3D11Texture2D **pTex2D, int wait);
     /// Return output width of a specific display
-    DWORD getWidth(int displayIndex);
-    /// Return output height of a specific display
-    DWORD getHeight(int displayIndex);
+    const std::pair<const DWORD, const DWORD> getResolution() const;
 };

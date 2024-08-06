@@ -49,15 +49,15 @@ private:
     NV_ENC_INITIALIZE_PARAMS initializeParams = { NV_ENC_INITIALIZE_PARAMS_VER };
     NV_ENC_CONFIG encodeConfig = { NV_ENC_CONFIG_VER };
     //    NvEncoderInitParam encodeCLIOptions;
+    /// display index
+    int displayIndex;
     int iGpu;
     std::ofstream fpOut;
     /// Failure count from Capture API
     UINT failCount = 0;
-    char **argv;
-    int argc;
 
 public:
-    explicit CudaH264(int argc, char *_argv[]);
+    explicit CudaH264(int DisplayIndex);
     ~CudaH264() override;
     HRESULT InitEnc() override;
     HRESULT Encode() { return (S_OK); }
@@ -66,15 +66,14 @@ public:
     void Cleanup(bool bDelete) override;
 
     // Desktop duplication
-
     /// Just a method to init everything
-    HRESULT Init();
+    HRESULT Init(ComPtr<IDXGIDevice2> &pDevice, ComPtr<IDXGIFactory3> &pFactory, ComPtr<IDXGIAdapter> &pAdapter);
 
     /// Initialize open the output file
     HRESULT InitOutFile();
 
      /// Initialize DDA handler
-    HRESULT InitDup();
+    HRESULT InitDup(ComPtr<IDXGIDevice2> &pDevice, ComPtr<IDXGIFactory3> &pFactory, ComPtr<IDXGIAdapter> &pAdapter);
 
     /// Initialize DXGI pipeline
     HRESULT InitDXGI();

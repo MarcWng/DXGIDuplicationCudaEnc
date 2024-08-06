@@ -6,8 +6,8 @@
 #include <fstream>
 #include <winnt.h>
 
-CudaH264::CudaH264(int _argc, char *_argv[])
-try : argc(_argc), argv(_argv), fpOut("out.h264", std::ios::out | std::ios::binary), iGpu(0)
+CudaH264::CudaH264(int _display)
+try : displayIndex(_display), fpOut("out"+ std::to_string(_display) + ".h264", std::ios::out | std::ios::binary), iGpu(0)
 {
     cuInit(0);
     char szDeviceName[80];
@@ -23,12 +23,12 @@ CudaH264::~CudaH264()
 {
     Cleanup(true);
 }
-HRESULT CudaH264::Init()
+HRESULT CudaH264::Init(ComPtr<IDXGIDevice2> &pDevice, ComPtr<IDXGIFactory3> &pFactory, ComPtr<IDXGIAdapter> &pAdapter)
 {
     HRESULT hr = S_OK;
     hr = InitDXGI();
     returnIfError(hr);
-    hr = InitDup();
+    hr = InitDup(pDevice, pFactory, pAdapter);
     returnIfError(hr);
     hr = InitEnc();
     returnIfError(hr);
@@ -109,13 +109,13 @@ HRESULT CudaH264::InitDXGI()
     return hr;
 }
 
-HRESULT CudaH264::InitDup()
+HRESULT CudaH264::InitDup(ComPtr<IDXGIDevice2> &pDevice, ComPtr<IDXGIFactory3> &pFactory, ComPtr<IDXGIAdapter> &pAdapter)
 {
     HRESULT hr = S_OK;
     if (!pDDAWrapper)
     {
         pDDAWrapper = new DDAImpl(pD3DDev, pCtx);
-        hr = pDDAWrapper->Init();
+        hr = pDDAWrapper->Init(displayIndex, pDevice, pFactory, pAdapter);
         returnIfError(hr);
     }
 
@@ -135,8 +135,9 @@ HRESULT CudaH264::InitOutFile()
 HRESULT CudaH264::InitEnc()
 {
     HRESULT hr = S_OK;
-    DWORD w = pDDAWrapper->getWidth(1);
-    DWORD h = pDDAWrapper->getHeight(1);
+    const std::pair<const DWORD, const DWORD> resolution = pDDAWrapper->getResolution();
+    const DWORD width = resolution.first;
+    const DWORD height = resolution.second;
 
     char szDeviceName[80];
     cuDeviceGet(&cuDevice, iGpu);
@@ -154,7 +155,7 @@ HRESULT CudaH264::InitEnc()
     int iGpu = 0;
     try
     {
-        pEnc = new NvEncoderCuda(cuContext, w, h, eFormat); // TODO Error management
+        pEnc = new NvEncoderCuda(cuContext, width, height, eFormat); // TODO Error management
     }
     catch (std::exception &error)
     {
@@ -164,8 +165,8 @@ HRESULT CudaH264::InitEnc()
     NV_ENC_INITIALIZE_PARAMS initializeParams = {NV_ENC_INITIALIZE_PARAMS_VER};
     NV_ENC_CONFIG encodeConfig = {NV_ENC_CONFIG_VER};
     initializeParams.encodeConfig = &encodeConfig;
-    initializeParams.encodeWidth = w;
-    initializeParams.encodeHeight = h;
+    initializeParams.encodeWidth = width;
+    initializeParams.encodeHeight = height;
     initializeParams.frameRateNum = 60;
     initializeParams.frameRateDen = 1;
 
@@ -219,11 +220,12 @@ void CudaH264::Cleanup(bool bDelete)
     SAFE_RELEASE(pDupTex2D);
     if (bDelete)
     {
+        if (pEncBuf)
+            pEncBuf->Release();
         if (pEnc)
         {
             pEnc->EndEncode(vPacket);
             WriteEncOutput();
-            pEncBuf->Release();
             pEnc->DestroyEncoder();
             ZeroMemory(&initializeParams, sizeof(NV_ENC_INITIALIZE_PARAMS));
             ZeroMemory(&encodeConfig, sizeof(NV_ENC_CONFIG));
@@ -235,7 +237,7 @@ void CudaH264::Cleanup(bool bDelete)
 
 HRESULT CudaH264::Capture(int wait)
 {
-    HRESULT hr = pDDAWrapper->GetCapturedFrame(&pDupTex2D, wait, 1);
+    HRESULT hr = pDDAWrapper->GetCapturedFrame(&pDupTex2D, wait);
     pEncBuf = nullptr;
     if (FAILED(hr))
         failCount++;
@@ -245,13 +247,30 @@ HRESULT CudaH264::Capture(int wait)
         D3D11_TEXTURE2D_DESC targetDesc;
         ZeroMemory(&targetDesc, sizeof(targetDesc));
         pDupTex2D->GetDesc(&targetDesc);
+        // std::cout << "MiscFlags D3D11_RESOURCE_MISC_GENERATE_MIPS : " << (targetDesc.MiscFlags & D3D11_RESOURCE_MISC_GENERATE_MIPS) << std::endl;
+        // std::cout << "MiscFlags D3D11_RESOURCE_MISC_SHARED : " << (targetDesc.MiscFlags & D3D11_RESOURCE_MISC_SHARED) << std::endl;
+        // std::cout << "MiscFlags D3D11_RESOURCE_MISC_TEXTURECUBE : " << (targetDesc.MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE) << std::endl;
+        // std::cout << "MiscFlags D3D11_RESOURCE_MISC_DRAWINDIRECT_ARGS : " << (targetDesc.MiscFlags & D3D11_RESOURCE_MISC_DRAWINDIRECT_ARGS) << std::endl;
+        // std::cout << "MiscFlags D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS : " << (targetDesc.MiscFlags & D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS) << std::endl;
+        // std::cout << "MiscFlags D3D11_RESOURCE_MISC_BUFFER_STRUCTURED : " << (targetDesc.MiscFlags & D3D11_RESOURCE_MISC_BUFFER_STRUCTURED) << std::endl;
+        // std::cout << "MiscFlags D3D11_RESOURCE_MISC_RESOURCE_CLAMP : " << (targetDesc.MiscFlags & D3D11_RESOURCE_MISC_RESOURCE_CLAMP) << std::endl;
+        // std::cout << "MiscFlags D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX : " << (targetDesc.MiscFlags & D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX) << std::endl;
+        // std::cout << "MiscFlags D3D11_RESOURCE_MISC_GDI_COMPATIBLE : " << (targetDesc.MiscFlags & D3D11_RESOURCE_MISC_GDI_COMPATIBLE) << std::endl;
+        // std::cout << "MiscFlags D3D11_RESOURCE_MISC_SHARED_NTHANDLE : " << (targetDesc.MiscFlags & D3D11_RESOURCE_MISC_SHARED_NTHANDLE) << std::endl;
+        // std::cout << "MiscFlags D3D11_RESOURCE_MISC_RESTRICTED_CONTENT : " << (targetDesc.MiscFlags & D3D11_RESOURCE_MISC_RESTRICTED_CONTENT) << std::endl;
+        // std::cout << "MiscFlags D3D11_RESOURCE_MISC_RESTRICT_SHARED_RESOURCE : " << (targetDesc.MiscFlags & D3D11_RESOURCE_MISC_RESTRICT_SHARED_RESOURCE) << std::endl;
+        // std::cout << "MiscFlags D3D11_RESOURCE_MISC_RESTRICT_SHARED_RESOURCE_DRIVER : " << (targetDesc.MiscFlags & D3D11_RESOURCE_MISC_RESTRICT_SHARED_RESOURCE_DRIVER) << std::endl;
+        // std::cout << "MiscFlags D3D11_RESOURCE_MISC_GUARDED : " << (targetDesc.MiscFlags & D3D11_RESOURCE_MISC_GUARDED) << std::endl;
+        // std::cout << "MiscFlags D3D11_RESOURCE_MISC_TILE_POOL : " << (targetDesc.MiscFlags & D3D11_RESOURCE_MISC_TILE_POOL) << std::endl;
+        // std::cout << "MiscFlags D3D11_RESOURCE_MISC_TILED : " << (targetDesc.MiscFlags & D3D11_RESOURCE_MISC_TILED) << std::endl;
+        // std::cout << "MiscFlags D3D11_RESOURCE_MISC_HW_PROTECTED : " << (targetDesc.MiscFlags & D3D11_RESOURCE_MISC_HW_PROTECTED) << std::endl;
+
         targetDesc.MiscFlags = 0;
-        hr = pD3DDev->CreateTexture2D(&targetDesc, nullptr, &pEncBuf);
+        hr = pD3DDev->CreateTexture2D(&targetDesc, nullptr, &pEncBuf); //////// ----- TODO : optimize this part by solving the misc flags problem
         // copy pduptex2D to pEncBuf
         pCtx->CopyResource(pEncBuf, pDupTex2D); // pour copier pDupTex2D dans pEncBuf
     }
-        return hr;
-
+    return hr;
 }
 
 /// Write encoded video output to file
@@ -273,7 +292,7 @@ HRESULT CudaH264::Preproc()
     CUresult cudaStatus = CUDA_SUCCESS;
     CUarray_st *cuArray = nullptr;
     // Create CUDA stream
-    cudaStatus = cuStreamCreate(&stream, CU_STREAM_DEFAULT);
+    cudaStatus = cuStreamCreate(&stream, CU_STREAM_NON_BLOCKING);
     if (cudaStatus != CUDA_SUCCESS)
     {
         std::cerr << "Failed to create CUDA stream. Error code: " << cudaStatus << std::endl;

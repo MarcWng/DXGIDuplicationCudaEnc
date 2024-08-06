@@ -41,20 +41,11 @@ DDAImpl::DDAImpl(ID3D11Device *pDev, ID3D11DeviceContext *pDevCtx)
 
 DDAImpl::~DDAImpl()
 {
-    for (auto &display : displays)
-    {
-        if (display.pDup)
-        {
-            display.pDup->ReleaseFrame();
-        }
-    }
+    display.pDup->ReleaseFrame();
 }
 
-HRESULT DDAImpl::Init()
+HRESULT DDAImpl::Init(int displayIndex, ComPtr<IDXGIDevice2> &pDevice, ComPtr<IDXGIFactory3> &pFactory, ComPtr<IDXGIAdapter> &pAdapter)
 {
-    ComPtr<IDXGIDevice2> pDevice;
-    ComPtr<IDXGIFactory1> pFactory;
-    ComPtr<IDXGIAdapter> pAdapter;
 
     HRESULT hr = S_OK;
 
@@ -64,45 +55,35 @@ HRESULT DDAImpl::Init()
     if (FAILED(hr = pDevice->GetParent(__uuidof(IDXGIAdapter), reinterpret_cast<void **>(pAdapter.GetAddressOf()))))
         return (hr);
 
-    // Enumerate all outputs
-    for (UINT i = 0; ; ++i)
+    ComPtr<IDXGIOutput> pOutput;
+    ComPtr<IDXGIOutput1> pOut1;
+
+    if (FAILED(hr = pAdapter->EnumOutputs(displayIndex, pOutput.GetAddressOf())))
     {
-        ComPtr<IDXGIOutput> pOutput;
-        ComPtr<IDXGIOutput1> pOut1;
-
-        if (FAILED(hr = pAdapter->EnumOutputs(i, pOutput.GetAddressOf())))
-        {
-            if (hr == DXGI_ERROR_NOT_FOUND) {
-                hr = S_OK;
-                break; // No more outputs
-            }
+        if (hr == DXGI_ERROR_NOT_FOUND)
+            return E_INVALIDARG; // Invalid display index
+        else
             return hr; // Other error
-        }
-
-        if (FAILED(hr = pOutput->QueryInterface(__uuidof(IDXGIOutput1), reinterpret_cast<void **>(pOut1.GetAddressOf()))))
-            return (hr);
-
-        ComPtr<IDXGIOutputDuplication> pDuplication;
-        if (FAILED(hr = pOut1->DuplicateOutput(pDevice.Get(), pDuplication.GetAddressOf())))
-            return (hr);
-
-        DXGI_OUTDUPL_DESC outDesc;
-        ZeroMemory(&outDesc, sizeof(outDesc));
-        pDuplication->GetDesc(&outDesc);
-
-        DisplayDuplication display = { pDuplication, outDesc.ModeDesc.Width, outDesc.ModeDesc.Height };
-        displays.push_back(display);
     }
+
+    if (FAILED(hr = pOutput->QueryInterface(__uuidof(IDXGIOutput1), reinterpret_cast<void **>(pOut1.GetAddressOf()))))
+        return (hr);
+
+    ComPtr<IDXGIOutputDuplication> pDuplication;
+    if (FAILED(hr = pOut1->DuplicateOutput(pDevice.Get(), pDuplication.GetAddressOf())))
+        return (hr);
+
+    DXGI_OUTDUPL_DESC outDesc;
+    ZeroMemory(&outDesc, sizeof(outDesc));
+    pDuplication->GetDesc(&outDesc);
+
+    display = {pDuplication, outDesc.ModeDesc.Width, outDesc.ModeDesc.Height};
 
     return hr;
 }
 
-HRESULT DDAImpl::GetCapturedFrame(ID3D11Texture2D **ppTex2D, int wait, int displayIndex)
+HRESULT DDAImpl::GetCapturedFrame(ID3D11Texture2D **ppTex2D, int wait)
 {
-    if (displayIndex < 0 || displayIndex >= displays.size())
-        return E_INVALIDARG;
-
-    auto &display = displays[displayIndex];
     HRESULT hr = S_OK;
     DXGI_OUTDUPL_FRAME_INFO frameInfo;
     ZeroMemory(&frameInfo, sizeof(frameInfo));
@@ -163,18 +144,7 @@ HRESULT DDAImpl::GetCapturedFrame(ID3D11Texture2D **ppTex2D, int wait, int displ
     return hr;
 }
 
-DWORD DDAImpl::getWidth(int displayIndex)
+const std::pair<const DWORD, const DWORD> DDAImpl::getResolution() const
 {
-    if (displayIndex < 0 || displayIndex >= displays.size())
-        return 0;
-
-    return displays[displayIndex].width;
-}
-
-DWORD DDAImpl::getHeight(int displayIndex)
-{
-    if (displayIndex < 0 || displayIndex >= displays.size())
-        return 0;
-
-    return displays[displayIndex].height;
+    return std::make_pair(display.width, display.height);
 }

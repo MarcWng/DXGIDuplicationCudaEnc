@@ -30,6 +30,7 @@ set(SOURCES
         src/Encoders/CudaH264.cpp
         include/Encoders/CudaH264.hpp
         include/Encoders/IEncoder.hpp
+        src/Core.cpp
 )
 
 
@@ -38,5 +39,6 @@ add_executable(nvEncDXGIOutputDuplicationSample ${SOURCES})
 target_link_libraries(nvEncDXGIOutputDuplicationSample
         d3d11
         d3dcompiler
+        dxgi
         ${CUDA_LIBRARIES}
 )
